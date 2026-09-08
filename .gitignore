@@ -1,0 +1,11 @@
+# Build artifacts
+*.exe
+*.obj
+*.o
+*.pdb
+
+# Generated image results
+/output/
+
+# CUDA compiler intermediates
+tmpxft_*
