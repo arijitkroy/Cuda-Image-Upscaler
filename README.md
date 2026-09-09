@@ -11,14 +11,24 @@ CUDA Image Upscaler is a Windows-oriented C++17 command-line utility for enlargi
 - Consistent, order-independent command-line options with useful validation errors
 - Pillow utilities for converting to and from common image formats
 
+## Documentation index
+
+Detailed implementation and operational documentation is available in [`docs/`](docs/README.md):
+
+- [Architecture](docs/architecture.md) - components, execution paths, ownership, and dependency boundaries
+- [Command-line reference](docs/cli.md) - full syntax, validation rules, and examples
+- [Build and runtime setup](docs/build-and-runtime.md) - CUDA/ONNX Runtime setup, deployment, and troubleshooting
+- [Image pipeline](docs/image-pipeline.md) - PPM constraints, CUDA stages, modes, and memory planning
+- [Contributing notes](docs/contributing.md) - source map, verification checklist, and generated-file policy
+
 ## Project layout
 
 ```text
 assets/                    Sample images
 include/                   CUDA and image-processing interfaces
-model/                     Real-ESRGAN ONNX model (local, not versioned)
+model/                     Bundled Real-ESRGAN ONNX model and source weights
 src/                       Application, CUDA kernels, and ONNX integration
-third_party/onnxruntime/   Local ONNX Runtime SDK (local, not versioned)
+third_party/onnxruntime/   Bundled ONNX Runtime SDK and runtime binaries
 tools/                     Pillow conversion and ONNX model helper scripts
 output/                    Generated images (local)
 ```
@@ -34,13 +44,13 @@ The geometric interpolation modes do not require ONNX Runtime at execution time.
 
 ## Build
 
-Place an ONNX Runtime GPU SDK under `third_party/onnxruntime` (or adjust the paths below). Its `include` directory and `lib/onnxruntime.lib` are used at link time. Build from the repository root:
+This repository includes an ONNX Runtime GPU SDK under `third_party/onnxruntime`. Its `include` directory and `lib/onnxruntime.lib` are used at link time. Build from the repository root:
 
 ```powershell
 nvcc -std=c++17 -Iinclude -Ithird_party\onnxruntime\include src\main.cu src\upscaler.cu src\super_resolution.cu src\image_io.cpp -Lthird_party\onnxruntime\lib -lonnxruntime -o image_upscaler.exe
 ```
 
-For Real-ESRGAN runtime support, copy the matching ONNX Runtime DLLs beside `image_upscaler.exe` (including the CUDA provider DLLs) and place the ONNX model at `model\RealESRGAN_x4plus.onnx`. CUDA Toolkit and ONNX Runtime versions must be compatible.
+The repository also includes the matching ONNX Runtime DLLs and `model\RealESRGAN_x4plus.onnx`. Keep the DLLs next to `image_upscaler.exe` when distributing a build. CUDA Toolkit and ONNX Runtime versions must be compatible.
 
 ## Usage
 
@@ -107,7 +117,8 @@ All modes use 16×16 CUDA thread blocks. Memory use grows approximately with the
 
 - P6 PPM is the only native image format.
 - The application uses CUDA device 0.
-- Real-ESRGAN model and runtime binaries are local dependencies and are intentionally excluded from Git history.
-- No license file is currently included; add one before distributing the project.
+- Bundled ONNX Runtime binaries and Real-ESRGAN model files retain their respective third-party license and distribution terms; see `third_party/onnxruntime/` and the model source terms before redistributing them.
 
-See [CHANGELOG.md](CHANGELOG.md) for release notes.
+## License
+
+The project source is available under the [MIT License](LICENSE). Third-party binaries and model files may be subject to separate terms.
