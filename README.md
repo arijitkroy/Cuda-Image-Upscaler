@@ -1,180 +1,113 @@
 # CUDA Image Upscaler
 
-A compact CUDA C++ command-line application that enlarges 8-bit RGB PPM images on the GPU. It provides two interpolation modes—nearest-neighbor and bilinear—and includes Python utilities for converting common image formats to and from the PPM format used by the CUDA pipeline.
+CUDA Image Upscaler is a Windows-oriented C++17 command-line utility for enlarging binary P6 PPM images on an NVIDIA GPU. It offers nearest-neighbor, bilinear, and bicubic resampling, an optional sharpening pass, and optional CUDA-backed Real-ESRGAN x4 inference.
 
 ## Features
 
-- GPU-accelerated image upscaling using CUDA kernels
-- Nearest-neighbor interpolation for crisp, pixel-preserving enlargement
-- Bilinear interpolation for smoother enlarged images
-- Configurable positive integer scale factor
-- Binary P6 PPM input and output with 8-bit RGB channels
-- Automatic creation of output directories
-- Pillow-based conversion helpers for using PNG, JPEG, and other Pillow-supported formats
-- CUDA error checking after memory operations and kernel launches
+- CUDA implementations of nearest-neighbor, bilinear, and bicubic interpolation
+- Optional non-negative sharpening strength, including fractional values
+- Real-ESRGAN x4 inference through ONNX Runtime's CUDA execution provider
+- Strict P6 PPM (8-bit RGB) reader and writer; output folders are created automatically
+- Consistent, order-independent command-line options with useful validation errors
+- Pillow utilities for converting to and from common image formats
 
 ## Project layout
 
 ```text
-.
-├── assets/
-│   └── input.ppm              Sample P6 PPM input image
-├── include/
-│   ├── cuda_utils.cuh         CUDA error-checking macro
-│   ├── image_io.h             PPM load/save declarations
-│   ├── image_types.cuh        Pixel and Image data structures
-│   └── upscaler.cuh           GPU upscaler interface
-├── output/                    Default location for generated images
-├── src/
-│   ├── image_io.cpp           P6 PPM reader and writer
-│   ├── main.cu                Command-line parsing and CUDA workflow
-│   └── upscaler.cu            Nearest-neighbor and bilinear kernels
-├── tools/
-│   ├── convert_from_ppm.py    Converts a PPM result to PNG
-│   ├── convert_to_ppm.py      Converts an image to PPM
-│   └── requirements.txt       Python dependencies
-└── image_upscaler.exe         Windows build artifact, if built locally
+assets/                    Sample images
+include/                   CUDA and image-processing interfaces
+model/                     Real-ESRGAN ONNX model (local, not versioned)
+src/                       Application, CUDA kernels, and ONNX integration
+third_party/onnxruntime/   Local ONNX Runtime SDK (local, not versioned)
+tools/                     Pillow conversion and ONNX model helper scripts
+output/                    Generated images (local)
 ```
 
 ## Requirements
 
-- An NVIDIA GPU with a CUDA-capable driver
-- NVIDIA CUDA Toolkit with `nvcc`
-- A C++17-capable host compiler supported by the installed CUDA Toolkit
-- Python 3.8 or newer and Pillow, only when using the conversion helpers
+- Windows, an NVIDIA GPU, and a CUDA-capable driver
+- CUDA Toolkit with `nvcc` and a C++17-capable supported host compiler
+- Python 3.8+ and Pillow only for the conversion scripts
+- For `realesrgan`: the ONNX Runtime GPU SDK and `model/RealESRGAN_x4plus.onnx`
 
-The native application has no third-party C++ library dependencies.
+The geometric interpolation modes do not require ONNX Runtime at execution time. The current application source includes the optional Real-ESRGAN backend, so the ONNX Runtime development headers and import library are required when compiling this checkout.
 
 ## Build
 
-From the repository root, compile all CUDA and C++ sources with C++17 enabled:
+Place an ONNX Runtime GPU SDK under `third_party/onnxruntime` (or adjust the paths below). Its `include` directory and `lib/onnxruntime.lib` are used at link time. Build from the repository root:
 
 ```powershell
-nvcc -std=c++17 -Iinclude src/main.cu src/upscaler.cu src/image_io.cpp -o image_upscaler.exe
+nvcc -std=c++17 -Iinclude -Ithird_party\onnxruntime\include src\main.cu src\upscaler.cu src\super_resolution.cu src\image_io.cpp -Lthird_party\onnxruntime\lib -lonnxruntime -o image_upscaler.exe
 ```
 
-On Unix-like systems, choose an appropriate output name:
-
-```bash
-nvcc -std=c++17 -Iinclude src/main.cu src/upscaler.cu src/image_io.cpp -o image_upscaler
-```
+For Real-ESRGAN runtime support, copy the matching ONNX Runtime DLLs beside `image_upscaler.exe` (including the CUDA provider DLLs) and place the ONNX model at `model\RealESRGAN_x4plus.onnx`. CUDA Toolkit and ONNX Runtime versions must be compatible.
 
 ## Usage
 
 ```text
-image_upscaler <input.ppm> [output.ppm] [--SCALE N] [--TYPE nearest|bilinear]
+image_upscaler.exe <input.ppm> [output.ppm] [options]
 ```
 
-The input image is required. If no output path is supplied, the program writes to `output/upscaled.ppm`. The default interpolation mode is `bilinear`, and the default scale factor is `2`.
+`input.ppm` is required. `output.ppm` is optional and defaults to `output/upscaled.ppm`. Options can appear before or after the output path. Use either a space or `=` between a long option and its value; option names and interpolation types are case-insensitive.
 
-Examples:
+| Option | Default | Description |
+| --- | --- | --- |
+| `-s N`, `--scale N` | `2` | Positive integer multiplier for each image dimension. |
+| `-t TYPE`, `--type TYPE` | `bicubic` | `nearest`, `bilinear`, `bicubic`, or `realesrgan`. |
+| `--sharpen AMOUNT` | `0` | Finite, non-negative post-processing strength. |
+| `--model PATH` | `model/RealESRGAN_x4plus.onnx` | ONNX model path used by `realesrgan`. |
+| `-h`, `--help` | — | Display usage. |
+
+Use `--` before a positional path beginning with a dash.
 
 ```powershell
-# Use defaults: 2x bilinear output at output/upscaled.ppm
+# Default: 2x bicubic output at output\upscaled.ppm
 .\image_upscaler.exe assets\input.ppm
 
-# Create a 4x bilinear result
-.\image_upscaler.exe assets\input.ppm --SCALE 4
+# Options may precede the output path; uppercase legacy spelling still works
+.\image_upscaler.exe --SCALE=3 --TYPE BILINEAR assets\input.ppm output\bilinear-3x.ppm
 
-# Create a 3x nearest-neighbor result at a chosen path
-.\image_upscaler.exe assets\input.ppm output\nearest-3x.ppm --SCALE 3 --TYPE nearest
+# Nearest-neighbor with a fractional sharpening pass
+.\image_upscaler.exe assets\input.ppm output\nearest.ppm -s 4 -t nearest --sharpen 0.35
+
+# Real-ESRGAN x4 is intentionally restricted to scale 4
+.\image_upscaler.exe assets\input.ppm output\realesrgan.ppm --type=realesrgan --scale=4
 ```
 
-The program reports the selected options and input/output dimensions. For example, a `500 x 375` source scaled by `2` produces a `1000 x 750` image.
-
-### Command-line options
-
-| Option | Values | Default | Description |
-| --- | --- | --- | --- |
-| Positional `input.ppm` | Path to a PPM file | Required | Source image to upscale. |
-| Positional `output.ppm` | Path | `output/upscaled.ppm` | Destination file. Parent directories are created when needed. |
-| `--SCALE N` | Integer greater than zero | `2` | Multiplier applied to both image dimensions. |
-| `--TYPE` | `nearest`, `bilinear` | `bilinear` | Interpolation algorithm. |
+Invalid numeric values such as `--scale 2x`, `--scale 0`, `--sharpen -1`, and non-finite sharpening values are rejected before CUDA work begins.
 
 ## Input and output format
 
-The CUDA executable accepts only binary PPM files with the following characteristics:
-
-- Magic number: `P6`
-- Three RGB channels
-- 8 bits per channel (`maxval` must be `255`)
-
-The `Pixel` structure contains exactly three unsigned-byte channels: red, green, and blue. The output is also written as a P6 PPM image.
-
-## Interpolation modes
-
-### Nearest neighbor
-
-Each output pixel is assigned the value of the corresponding source pixel using integer coordinate division. This keeps original pixel values intact and is useful for pixel art or when sharp block boundaries are preferred.
-
-### Bilinear
-
-For each output coordinate, the kernel maps the coordinate to source space, samples its four surrounding source pixels, and interpolates each RGB channel horizontally and then vertically. At image edges, sample coordinates are clamped to the last valid row or column. This typically produces a smoother visual result than nearest-neighbor scaling.
-
-Both kernels use a two-dimensional `16 x 16` CUDA thread block. The grid dimensions are rounded up so partial edge blocks remain safe; threads outside the output bounds return without writing.
-
-## Converting other image formats
-
-Install the Python dependency:
+The executable accepts and writes binary P6 PPM files with three RGB channels and `maxval` of `255`. Convert other image formats with Pillow:
 
 ```powershell
 python -m pip install -r tools\requirements.txt
+python tools\convert_to_ppm.py assets\photo.png assets\photo.ppm
+.\image_upscaler.exe assets\photo.ppm output\photo-4x.ppm --scale 4 --type bicubic
+python tools\convert_from_ppm.py output\photo-4x.ppm output\photo-4x.png
 ```
 
-Convert an image to a CUDA-compatible PPM file:
+## Modes
 
-```powershell
-python tools\convert_to_ppm.py assets\camel.jpg assets\camel.ppm
-```
+- **nearest** preserves source pixels in square blocks and is useful for pixel art.
+- **bilinear** blends four neighbouring source samples for smooth enlargement.
+- **bicubic** samples a 4×4 neighbourhood for a sharper, smoother geometric result.
+- **realesrgan** runs the RealESRGAN x4plus ONNX model on CUDA. It requires `--scale 4`; it is not a general arbitrary-scale mode.
 
-Run the upscaler, then convert the PPM result to PNG:
+All modes use 16×16 CUDA thread blocks. Memory use grows approximately with the square of the scale factor.
 
-```powershell
-.\image_upscaler.exe assets\camel.ppm output\camel-4x.ppm --SCALE 4 --TYPE bilinear
-python tools\convert_from_ppm.py output\camel-4x.ppm output\camel-4x.png
-```
+## Utilities
 
-The conversion scripts open the source through Pillow and convert it to RGB before saving. `convert_from_ppm.py` writes PNG output.
+- `tools/convert_to_ppm.py`: Converts any Pillow-supported input to an RGB PPM file.
+- `tools/convert_from_ppm.py`: Converts a PPM result to PNG.
+- `tools/export_onnx.py`: Exports `RealESRGAN_x4plus.pth` to ONNX; it requires PyTorch and BasicSR.
+- `tools/test_onnx.py` and `src/onnx_test.cpp`: Report ONNX Runtime CUDA-provider availability.
 
-## Processing flow
+## Limitations
 
-```text
-P6 PPM input
-    |
-    v
-Host memory allocation and PPM decoding
-    |
-    v
-Copy RGB pixels to CUDA device memory
-    |
-    v
-Nearest-neighbor or bilinear CUDA kernel
-    |
-    v
-Copy enlarged pixels back to host memory
-    |
-    v
-P6 PPM output
-```
+- P6 PPM is the only native image format.
+- The application uses CUDA device 0.
+- Real-ESRGAN model and runtime binaries are local dependencies and are intentionally excluded from Git history.
+- No license file is currently included; add one before distributing the project.
 
-## Error handling and limitations
-
-- CUDA allocation, memory-copy, launch, and synchronization failures are checked and reported.
-- Invalid interpolation types, unknown options, missing option values, and non-positive scale factors are rejected.
-- The executable currently supports P6 PPM input only; use the Python converter for JPEG, PNG, and other formats.
-- This is a geometric resampler, not an AI super-resolution model. It does not infer new image detail.
-- Very large scale factors increase output width and height linearly, but pixel count and GPU memory use grow with the square of the scale factor.
-
-## Verification
-
-The project was verified with CUDA Toolkit 13.3 by running:
-
-```powershell
-.\image_upscaler.exe assets\input.ppm --SCALE 2 --TYPE bilinear
-```
-
-The bundled `assets/input.ppm` is `500 x 375`; the command produced `output/upscaled.ppm` at `1000 x 750`.
-
-## License
-
-No license file is currently included. Add a license before distributing or reusing this project under explicit terms.
+See [CHANGELOG.md](CHANGELOG.md) for release notes.

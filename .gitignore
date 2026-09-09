@@ -6,3 +6,9 @@
 
 # CUDA compiler intermediates
 tmpxft_*
+
+# Local runtime dependencies and generated assets
+model/
+third_party/
+onnxruntime*.dll
+output/
